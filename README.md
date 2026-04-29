@@ -21,7 +21,16 @@ go install github.com/rizqishq/ifrit@latest
 ifrit watch
 ```
 
-Real-time dashboard that auto-refreshes every 2 seconds. Navigate with `j`/`k` or arrow keys, press `x` to kill a process, `/` to filter, `r` to refresh, `q` to quit.
+Real-time dashboard that auto-refreshes every 2 seconds.
+
+| Key | Action |
+|-----|--------|
+| `j`/`k` or arrows | Navigate |
+| `x` | Kill process (with confirmation) |
+| `s` | Cycle sort (port, PID, status, process) |
+| `/` | Filter |
+| `r` | Refresh |
+| `q` | Quit |
 
 ```
 ifrit watch --interval 5

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -11,6 +12,31 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
+
+type sortField int
+
+const (
+	sortByPort sortField = iota
+	sortByPID
+	sortByStatus
+	sortByProcess
+	sortFieldCount
+)
+
+func (s sortField) String() string {
+	switch s {
+	case sortByPort:
+		return "port"
+	case sortByPID:
+		return "pid"
+	case sortByStatus:
+		return "status"
+	case sortByProcess:
+		return "process"
+	default:
+		return "port"
+	}
+}
 
 var (
 	colorGreen  = lipgloss.Color("#22c55e")
@@ -50,6 +76,7 @@ type keyMap struct {
 	Kill    key.Binding
 	Refresh key.Binding
 	Filter  key.Binding
+	Sort    key.Binding
 	Escape  key.Binding
 	Quit    key.Binding
 }
@@ -74,6 +101,10 @@ var keys = keyMap{
 	Filter: key.NewBinding(
 		key.WithKeys("/"),
 		key.WithHelp("/", "filter"),
+	),
+	Sort: key.NewBinding(
+		key.WithKeys("s"),
+		key.WithHelp("s", "sort"),
 	),
 	Escape: key.NewBinding(
 		key.WithKeys("esc"),
@@ -104,6 +135,7 @@ type model struct {
 	message    string
 	confirming bool
 	killTarget *PortEntry
+	sortBy     sortField
 }
 
 func initialModel(interval time.Duration) model {
@@ -220,6 +252,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.message = "cannot kill: no PID"
 				}
 			}
+		case key.Matches(msg, keys.Sort):
+			m.sortBy = (m.sortBy + 1) % sortFieldCount
+			m.applyFilter()
+			m.cursor = 0
+			m.message = fmt.Sprintf("sort: %s", m.sortBy)
 		case key.Matches(msg, keys.Refresh):
 			m.message = "refreshing..."
 			return m, fetchConnections
@@ -236,19 +273,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) applyFilter() {
 	query := strings.ToLower(m.filter.Value())
 	if query == "" {
-		m.filtered = m.entries
-		return
-	}
-
-	var result []PortEntry
-	for _, e := range m.entries {
-		line := fmt.Sprintf("%d %d %s %s %s %s",
-			e.PID, e.LocalPort, e.Proto, e.Status, e.ProcessName, e.User)
-		if strings.Contains(strings.ToLower(line), query) {
-			result = append(result, e)
+		m.filtered = make([]PortEntry, len(m.entries))
+		copy(m.filtered, m.entries)
+	} else {
+		m.filtered = nil
+		for _, e := range m.entries {
+			line := fmt.Sprintf("%d %d %s %s %s %s",
+				e.PID, e.LocalPort, e.Proto, e.Status, e.ProcessName, e.User)
+			if strings.Contains(strings.ToLower(line), query) {
+				m.filtered = append(m.filtered, e)
+			}
 		}
 	}
-	m.filtered = result
+
+	sort.Slice(m.filtered, func(i, j int) bool {
+		switch m.sortBy {
+		case sortByPID:
+			return m.filtered[i].PID < m.filtered[j].PID
+		case sortByStatus:
+			return m.filtered[i].Status < m.filtered[j].Status
+		case sortByProcess:
+			return strings.ToLower(m.filtered[i].ProcessName) < strings.ToLower(m.filtered[j].ProcessName)
+		default:
+			return m.filtered[i].LocalPort < m.filtered[j].LocalPort
+		}
+	})
 }
 
 func (m model) View() string {
@@ -260,7 +309,7 @@ func (m model) View() string {
 
 	title := styleTitle.Render("ifrit")
 	info := styleStatusBar.Render(fmt.Sprintf(
-		"  %d connections  refresh %s", len(m.filtered), m.interval))
+		"  %d connections  refresh %s  sort %s", len(m.filtered), m.interval, m.sortBy))
 	b.WriteString(title + info + "\n")
 
 	if m.filtering || m.filter.Value() != "" {
@@ -269,9 +318,12 @@ func (m model) View() string {
 		b.WriteString("\n")
 	}
 
-	header := fmt.Sprintf("  %-8s %-7s %-7s %-14s %-20s %-12s",
+	headerText := fmt.Sprintf("  %-8s %-7s %-7s %-14s %-20s %s",
 		"PID", "PORT", "PROTO", "STATUS", "PROCESS", "USER")
-	b.WriteString(styleHeader.Render(header) + "\n")
+	if len(headerText) < m.width {
+		headerText += strings.Repeat(" ", m.width-len(headerText))
+	}
+	b.WriteString(styleHeader.Render(headerText) + "\n")
 
 	// Calculate how many rows we can show.
 	// 4 lines reserved: title, filter/blank, header, status bar
@@ -310,10 +362,14 @@ func (m model) View() string {
 				cursor = "> "
 			}
 
-			line := fmt.Sprintf("%s%-8d %-7d %-7s %s %-20s %-12s",
+			line := fmt.Sprintf("%s%-8d %-7d %-7s %s %-20s %s",
 				cursor, e.PID, e.LocalPort, e.Proto, status, e.ProcessName, e.User)
 
 			if i == m.cursor {
+				pad := m.width - lipgloss.Width(line)
+				if pad > 0 {
+					line += strings.Repeat(" ", pad)
+				}
 				line = styleSelected.Render(line)
 			}
 
@@ -356,6 +412,7 @@ func (m model) View() string {
 		{"↑/k", "up"},
 		{"↓/j", "down"},
 		{"x", "kill"},
+		{"s", "sort"},
 		{"r", "refresh"},
 		{"/", "filter"},
 		{"q", "quit"},

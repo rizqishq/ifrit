@@ -103,13 +103,22 @@ func getConnections(protoFilter, stateFilter string, portFilter uint32) ([]PortE
 func killProcess(pid int32, force bool) error {
 	p, err := process.NewProcess(pid)
 	if err != nil {
-		return fmt.Errorf("process %d not found: %w", pid, err)
+		return fmt.Errorf("process %d not found", pid)
 	}
 
 	if force {
-		return p.Kill()
+		err = p.Kill()
+	} else {
+		err = p.Terminate()
 	}
-	return p.Terminate()
+
+	if err != nil {
+		if strings.Contains(err.Error(), "permission denied") || strings.Contains(err.Error(), "operation not permitted") {
+			return fmt.Errorf("permission denied: try running with sudo")
+		}
+		return fmt.Errorf("failed to kill process %d: %v", pid, err)
+	}
+	return nil
 }
 
 // scanPorts probes a range of TCP ports concurrently, bounded by a semaphore
@@ -274,6 +283,13 @@ var scanCmd = &cobra.Command{
 				startPort, _ = strconv.Atoi(parts[0])
 				endPort = startPort
 			}
+		}
+
+		if startPort <= 0 || endPort <= 0 || startPort > 65535 || endPort > 65535 {
+			return fmt.Errorf("invalid port range: ports must be between 1 and 65535")
+		}
+		if startPort > endPort {
+			return fmt.Errorf("invalid port range: start port (%d) is greater than end port (%d)", startPort, endPort)
 		}
 
 		fmt.Printf("Scanning %s (ports %d-%d)...\n\n", host, startPort, endPort)
