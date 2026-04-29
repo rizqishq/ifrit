@@ -160,6 +160,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filter.Blur()
 				m.filter.SetValue("")
 				m.applyFilter()
+				m.cursor = 0
 				return m, nil
 			case msg.String() == "enter":
 				m.filtering = false
@@ -182,7 +183,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor--
 			}
 		case key.Matches(msg, keys.Down):
-			if m.cursor < len(m.filtered) {
+			if m.cursor < len(m.filtered)-1 {
 				m.cursor++
 			}
 		case key.Matches(msg, keys.Kill):
@@ -195,8 +196,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					} else {
 						m.message = fmt.Sprintf("killed %d (%s)", entry.PID, entry.ProcessName)
 					}
+					return m, fetchConnections
+				} else {
+					m.message = "cannot kill: no PID"
 				}
-				m.message = "cannot kill: no PID"
 			}
 		case key.Matches(msg, keys.Refresh):
 			m.message = "refreshing..."
