@@ -106,21 +106,10 @@ func killProcess(pid int32, force bool) error {
 		return fmt.Errorf("process %d not found: %w", pid, err)
 	}
 
-	name, _ := p.Name()
-
 	if force {
-		if err := p.Kill(); err != nil {
-			return fmt.Errorf("failed to kill process %d (%s): %w", pid, name, err)
-		}
-		fmt.Printf("Killed process %d (%s) with SIGKILL\n", pid, name)
-	} else {
-		if err := p.Terminate(); err != nil {
-			return fmt.Errorf("failed to terminate process %d (%s): %w", pid, name, err)
-		}
-		fmt.Printf("Terminated process %d (%s) with SIGTERM\n", pid, name)
+		return p.Kill()
 	}
-
-	return nil
+	return p.Terminate()
 }
 
 // scanPorts probes a range of TCP ports concurrently, bounded by a semaphore
@@ -253,7 +242,16 @@ var killCmd = &cobra.Command{
 		}
 
 		force, _ := cmd.Flags().GetBool("force")
-		return killProcess(int32(pid), force)
+		if err := killProcess(int32(pid), force); err != nil {
+			return err
+		}
+
+		signal := "SIGTERM"
+		if force {
+			signal = "SIGKILL"
+		}
+		fmt.Printf("Killed process %d with %s\n", pid, signal)
+		return nil
 	},
 }
 

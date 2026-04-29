@@ -92,16 +92,18 @@ type connectionsMsg struct {
 }
 
 type model struct {
-	entries   []PortEntry
-	filtered  []PortEntry
-	cursor    int
-	width     int
-	height    int
-	interval  time.Duration
-	err       error
-	filter    textinput.Model
-	filtering bool
-	message   string
+	entries    []PortEntry
+	filtered   []PortEntry
+	cursor     int
+	width      int
+	height     int
+	interval   time.Duration
+	err        error
+	filter     textinput.Model
+	filtering  bool
+	message    string
+	confirming bool
+	killTarget *PortEntry
 }
 
 func initialModel(interval time.Duration) model {
@@ -153,6 +155,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.confirming {
+			switch msg.String() {
+			case "y":
+				target := m.killTarget
+				m.confirming = false
+				m.killTarget = nil
+				err := killProcess(target.PID, false)
+				if err != nil {
+					m.message = fmt.Sprintf("error: %v", err)
+				} else {
+					m.message = fmt.Sprintf("killed %d (%s)", target.PID, target.ProcessName)
+				}
+				return m, fetchConnections
+			default:
+				m.confirming = false
+				m.killTarget = nil
+				m.message = "cancelled"
+			}
+			return m, nil
+		}
+
 		if m.filtering {
 			switch {
 			case key.Matches(msg, keys.Escape):
@@ -183,20 +206,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor--
 			}
 		case key.Matches(msg, keys.Down):
-			if m.cursor < len(m.filtered)-1 {
+			if len(m.filtered) > 0 && m.cursor < len(m.filtered)-1 {
 				m.cursor++
 			}
 		case key.Matches(msg, keys.Kill):
 			if len(m.filtered) > 0 {
 				entry := m.filtered[m.cursor]
 				if entry.PID > 0 {
-					err := killProcess(entry.PID, false)
-					if err != nil {
-						m.message = fmt.Sprintf("error: %v", err)
-					} else {
-						m.message = fmt.Sprintf("killed %d (%s)", entry.PID, entry.ProcessName)
-					}
-					return m, fetchConnections
+					m.confirming = true
+					m.killTarget = &entry
+					m.message = fmt.Sprintf("kill %d (%s)? y/n", entry.PID, entry.ProcessName)
 				} else {
 					m.message = "cannot kill: no PID"
 				}
@@ -261,6 +280,10 @@ func (m model) View() string {
 		maxRows = 1
 	}
 
+	if m.cursor >= len(m.filtered) && len(m.filtered) > 0 {
+		m.cursor = len(m.filtered) - 1
+	}
+
 	if m.err != nil {
 		b.WriteString(lipgloss.NewStyle().Foreground(colorRed).Render(
 			fmt.Sprintf("  error: %v", m.err)) + "\n")
@@ -298,6 +321,30 @@ func (m model) View() string {
 		}
 	}
 
+	if m.confirming && m.killTarget != nil {
+		rendered := strings.Count(b.String(), "\n")
+		for rendered < m.height-3 {
+			b.WriteString("\n")
+			rendered++
+		}
+
+		prompt := fmt.Sprintf(" kill %d (%s)? ", m.killTarget.PID, m.killTarget.ProcessName)
+		hint := "y/n"
+
+		dialogStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorYellow).
+			Padding(0, 1).
+			Width(m.width - 4)
+
+		content := lipgloss.NewStyle().Bold(true).Foreground(colorYellow).Render(prompt) +
+			lipgloss.NewStyle().Foreground(colorDim).Render(hint)
+
+		b.WriteString(lipgloss.Place(m.width, 3, lipgloss.Center, lipgloss.Bottom, dialogStyle.Render(content)))
+
+		return b.String()
+	}
+
 	// Pad remaining space so the status bar stays at the bottom
 	rendered := strings.Count(b.String(), "\n")
 	for rendered < m.height-1 {
@@ -321,15 +368,25 @@ func (m model) View() string {
 	}
 	helpLine := strings.Join(helpParts, descStyle.Render("  ·  "))
 
-	statusLeft := m.message
-	if statusLeft == "" {
-		statusLeft = "ready"
+	var styledMessage string
+	switch {
+	case m.message == "" || m.message == "ready":
+		styledMessage = styleStatusBar.Render("ready")
+	case strings.HasPrefix(m.message, "error"):
+		styledMessage = lipgloss.NewStyle().Bold(true).Foreground(colorRed).Render(m.message)
+	case strings.HasPrefix(m.message, "killed"):
+		styledMessage = lipgloss.NewStyle().Bold(true).Foreground(colorGreen).Render(m.message)
+	case m.message == "cancelled":
+		styledMessage = lipgloss.NewStyle().Bold(true).Foreground(colorYellow).Render(m.message)
+	default:
+		styledMessage = lipgloss.NewStyle().Foreground(colorWhite).Render(m.message)
 	}
-	gap := m.width - lipgloss.Width(statusLeft) - lipgloss.Width(helpLine)
+
+	gap := m.width - lipgloss.Width(styledMessage) - lipgloss.Width(helpLine)
 	if gap < 1 {
 		gap = 1
 	}
-	bar := styleStatusBar.Render(statusLeft) + strings.Repeat(" ", gap) + helpLine
+	bar := styledMessage + strings.Repeat(" ", gap) + helpLine
 	b.WriteString(bar)
 
 	return b.String()
