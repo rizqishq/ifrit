@@ -2,25 +2,30 @@
 
 A command-line tool for monitoring network ports and managing processes.
 
-This is a learning project -- built while picking up Go. Contributions and feedback are welcome.
+> [!NOTE]
+> This is a learning project -- built while picking up Go. Contributions and feedback are welcome.
 
 ## Install
 
-Requires [Go](https://go.dev/dl/) 1.21+.
+Requires [Go](https://go.dev/dl/) 1.25+.
 
 ```
 go install github.com/rizqishq/ifrit@latest
 ```
 
-Or build from source:
-
-```
-git clone https://github.com/rizqishq/ifrit.git
-cd ifrit
-go build -o ifrit .
-```
-
 ## Usage
+
+### Watch (interactive TUI)
+
+```
+ifrit watch
+```
+
+Real-time dashboard that auto-refreshes every 2 seconds. Navigate with `j`/`k` or arrow keys, press `x` to kill a process, `/` to filter, `r` to refresh, `q` to quit.
+
+```
+ifrit watch --interval 5
+```
 
 ### List connections
 

@@ -211,8 +211,7 @@ var rootCmd = &cobra.Command{
 	Use:   "ifrit",
 	Short: "A port & process monitor for developers",
 	Long: `ifrit is a CLI tool for monitoring network ports, viewing active
-connections, and managing processes. Built for developers who are
-tired of deciphering lsof and netstat output.`,
+connections, and managing processes.`,
 }
 
 var listCmd = &cobra.Command{
